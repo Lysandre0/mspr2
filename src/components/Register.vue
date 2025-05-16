@@ -36,7 +36,7 @@
       </div>
 
       <button
-        @click="handleRegister"
+        @click="goToQRCode"
         class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg transition"
       >
         Suivant
@@ -52,7 +52,6 @@
 
 <script setup>
 import { ref } from 'vue'
-import axios from 'axios'
 import { useRouter } from 'vue-router'
 
 const email = ref('')
@@ -60,7 +59,7 @@ const password = ref('')
 const confirmPassword = ref('')
 const router = useRouter()
 
-const handleRegister = async () => {
+const goToQRCode = () => {
   if (!email.value || !password.value || !confirmPassword.value) {
     alert("Tous les champs sont requis.")
     return
@@ -71,17 +70,9 @@ const handleRegister = async () => {
     return
   }
 
-  try {
-    await axios.post('https://<TON_OPENFAAS>/function/register-user', {
-      email: email.value,
-      password: password.value,
-    })
+  localStorage.setItem('email', email.value)
+  localStorage.setItem('password', password.value)
 
-    localStorage.setItem('email', email.value)
-    router.push('/qrcode')
-  } catch (error) {
-    alert("Erreur lors de l'inscription : " + (error.response?.data || error.message))
-    console.error(error)
-  }
+  router.push('/qrcode')
 }
 </script>

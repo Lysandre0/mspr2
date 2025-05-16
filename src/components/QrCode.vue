@@ -2,9 +2,14 @@
   <div class="min-h-screen bg-gradient-to-br from-gray-50 to-blue-100 flex items-center justify-center px-4">
     <div class="bg-white shadow-xl rounded-xl w-full max-w-md p-8">
       <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">Authentification OTP</h1>
-      <p class="text-center text-gray-600 mb-4">Scannez ce QR Code avec votre application</p>
 
-      <div class="flex justify-center mb-6">
+      <p v-if="qrError" class="text-center text-red-500 mb-4">{{ qrError }}</p>
+
+      <p v-if="otpUri" class="text-center text-gray-600 mb-4">
+        Scannez ce QR Code avec votre application
+      </p>
+
+      <div v-if="otpUri" class="flex justify-center mb-6">
         <qrcode-vue :value="otpUri" :size="180" />
       </div>
 
@@ -26,7 +31,7 @@
       </button>
 
       <p class="text-center text-sm mt-4">
-        <router-link to="/register" class="text-blue-600 font-medium hover:underline">Annuler</router-link>
+        <router-link to="/login" class="text-blue-600 font-medium hover:underline">Retour</router-link>
       </p>
     </div>
   </div>
@@ -38,39 +43,72 @@ import axios from 'axios'
 import QrcodeVue from 'qrcode.vue'
 import { useRouter } from 'vue-router'
 
-const email = localStorage.getItem('email')
+const router = useRouter()
 const otpUri = ref('')
 const otpCode = ref('')
-const router = useRouter()
+const qrError = ref('')
+
+const email = localStorage.getItem('email')
+const password = localStorage.getItem('password')
 
 onMounted(async () => {
-  try {
-    const res = await axios.post('https://<TON_OPENFAAS>/function/generate-otp-secret', {
-      email
-    })
+  if (!email) {
+    qrError.value = "Aucun email trouvé. Veuillez recommencer l'inscription."
+    return
+  }
 
-    otpUri.value = res.data.otpAuthUrl
+  try {
+    const response = await axios.post(
+      'http://172.16.150.40:8080/function/qr-code-gen',
+      {
+        username: email,
+        issuer: 'COFRAP'
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    )
+
+    otpUri.value = response.data.otpauth_url
   } catch (error) {
-    alert("Erreur lors de la génération du QR code.")
-    console.error(error)
+    qrError.value = "Erreur lors de la génération du QR Code : " +
+      (error.response?.data || error.message)
+    console.error("QR code error:", error)
   }
 })
 
 const verifyCode = async () => {
+  if (!otpCode.value) {
+    alert("Veuillez entrer le code OTP.")
+    return
+  }
+
   try {
-    const res = await axios.post('https://<TON_OPENFAAS>/function/verify-otp', {
-      email,
-      otp: otpCode.value
-    })
+    const res = await axios.post(
+      'http://172.16.150.40:8080/function/create-user',
+      {
+        email,
+        password,
+        otp: otpCode.value
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      }
+    )
 
     if (res.data.success) {
+      localStorage.removeItem('password')
       router.push('/success')
     } else {
-      alert("Code OTP invalide.")
+      alert("Code OTP invalide ou création du compte échouée.")
     }
   } catch (error) {
     alert("Erreur lors de la vérification : " + (error.response?.data || error.message))
-    console.error(error)
+    console.error("OTP verification error:", error)
   }
 }
 </script>
