@@ -139,36 +139,36 @@ const handleLogin = async () => {
       }
     )
 
-    console.log('Réponse API:', userRes.data)
-    let userData = userRes.data.replaceAll('(', '[').replaceAll(')', ']').split(',')
-
-    if (!userRes.data || !Array.isArray(userRes.data) || userRes.data.length === 0) {
+    const user = userRes.data.replaceAll("'", "").replaceAll(" ", "").split(',')
+    if (user.length === 0) {
       error.value = "Utilisateur non trouvé."
       return
     }
 
-    const user = userRes.data[0].split(',')
+    
     // Vérification du mot de passe (sans chiffrement car déjà en clair dans la base)
-    if (user[2] !== password.value) {
+    console.log(user[2] + " " + password.value + " " + (user[2] != password.value))
+    if (user[2] != password.value) {
       error.value = "Mot de passe incorrect."
       return
     }
 
     // Vérification du code OTP
-    const otpRes = await axios.post(
+    /*const otpRes = await axios.post(
       `${API_BASE_URL}/function/verify-otp`,
       {
         username: email.value,
         otp: otp.value
       }
-    )
-
-    if (otpRes.data.success) {
+    )*/
+    
+    //if (otpRes.data.success) {
       localStorage.setItem('email', email.value)
       router.push('/success')
-    } else {
+    /*} else {
       error.value = "Code OTP invalide."
     }
+      */
   } catch (error) {
     console.error("Login error:", error)
     if (error.code === 'ECONNABORTED') {
