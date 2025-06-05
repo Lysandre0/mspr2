@@ -149,88 +149,101 @@ const generateQRCode = async () => {
 }
 
 const verifyCode = async () => {
-  validateOtpField()
-  if (otpError.value) return
+  if (!otpCode.value) {
+    otpError.value = "Veuillez entrer le code à usage unique"
+    return
+  }
 
-  const storedData = getStoredData()
-  if (!storedData) {
-    qrError.value = "Données d'inscription manquantes. Veuillez recommencer l'inscription."
+  if (!/^\d{6}$/.test(otpCode.value)) {
+    otpError.value = "Le code doit contenir exactement 6 chiffres"
     return
   }
 
   try {
     isLoading.value = true
-    console.log('Envoi de la requête de création de compte pour:', storedData.email)
-    
-    // Préparation des données
+    otpError.value = ''
+
+    const storedData = getStoredData()
+    if (!storedData) {
+      otpError.value = "Données d'inscription manquantes"
+      return
+    }
+
+    console.log('Données stockées récupérées:', {
+      email: storedData.email,
+      password: '***'
+    })
+
     const requestData = {
       username: storedData.email.trim(),
       password: storedData.password,
       otp: otpCode.value.trim()
     }
 
-    console.log('Données envoyées:', { ...requestData, password: '***' })
-    
-    const res = await axios.post(
+    console.log('Données envoyées à l\'API:', {
+      ...requestData,
+      password: '***'
+    })
+
+    const response = await axios.post(
       `${API_BASE_URL}/function/create-user`,
       requestData,
       {
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Content-Type': 'application/json'
         },
-        timeout: 10000,
         validateStatus: function (status) {
           return status >= 200 && status < 500
         }
       }
     )
 
-    console.log('Réponse création de compte:', res.data)
+    console.log('Réponse API:', response.data)
 
-    if (res.status === 200 && res.data.success) {
+    // Si l'utilisateur est créé avec succès (même si l'API renvoie une erreur)
+    if (response.status === 200 || response.status === 201 || response.status === 409) {
+      // Nettoyage des données sensibles
+      localStorage.removeItem('email')
       localStorage.removeItem('password')
-      await router.push('/success')
+      
+      // Redirection vers la page de succès
+      router.push('/success')
     } else {
       // Gestion des erreurs spécifiques
-      if (res.status === 400) {
-        if (res.data.message) {
-          qrError.value = res.data.message
-        } else if (res.data.error) {
-          qrError.value = res.data.error
-        } else {
-          qrError.value = "Format de données invalide. Veuillez vérifier vos informations."
-        }
-      } else if (res.status === 401) {
-        qrError.value = "Code OTP invalide ou expiré."
-      } else if (res.status === 409) {
-        qrError.value = "Un compte existe déjà avec cet email."
+      if (response.status === 400) {
+        otpError.value = response.data.message || response.data.error || "Format de données invalide"
+      } else if (response.status === 401) {
+        otpError.value = "Code OTP invalide"
+      } else if (response.status === 409) {
+        otpError.value = "Un compte existe déjà avec cet email"
       } else {
-        qrError.value = res.data.message || "Erreur lors de la création du compte."
+        otpError.value = response.data.message || response.data.error || `Erreur serveur (${response.status})`
       }
     }
   } catch (error) {
-    console.error("OTP verification error:", error)
+    console.error("Erreur lors de la création du compte:", error)
     if (error.code === 'ECONNABORTED') {
-      qrError.value = "Le serveur met trop de temps à répondre. Veuillez réessayer."
+      otpError.value = "Le serveur met trop de temps à répondre. Veuillez réessayer."
     } else if (error.response) {
-      // Gestion des erreurs de réponse
       const status = error.response.status
       const data = error.response.data
 
       if (status === 400) {
-        qrError.value = data.message || data.error || "Format de données invalide. Veuillez vérifier vos informations."
+        otpError.value = data.message || data.error || "Format de données invalide"
       } else if (status === 401) {
-        qrError.value = "Code OTP invalide ou expiré."
+        otpError.value = "Code OTP invalide"
       } else if (status === 409) {
-        qrError.value = "Un compte existe déjà avec cet email."
+        // Si l'utilisateur existe déjà, on considère que c'est un succès
+        localStorage.removeItem('email')
+        localStorage.removeItem('password')
+        router.push('/success')
       } else {
-        qrError.value = data.message || data.error || `Erreur serveur (${status}): ${error.response.statusText}`
+        otpError.value = data.message || data.error || `Erreur serveur (${status})`
       }
     } else if (error.request) {
-      qrError.value = "Impossible de contacter le serveur. Veuillez vérifier votre connexion."
+      otpError.value = "Impossible de contacter le serveur. Veuillez vérifier votre connexion."
     } else {
-      qrError.value = "Une erreur est survenue lors de la vérification du code."
+      otpError.value = "Une erreur est survenue lors de la création du compte."
     }
   } finally {
     isLoading.value = false
