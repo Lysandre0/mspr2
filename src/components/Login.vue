@@ -140,14 +140,14 @@ const handleLogin = async () => {
     )
 
     console.log('Réponse API:', userRes.data)
-    let userData = userRes.data.replaceAll('(', '[').replaceAll(')', ']').toArray()
+    let userData = userRes.data.replaceAll('(', '[').replaceAll(')', ']').split(',')
 
     if (!userRes.data || !Array.isArray(userRes.data) || userRes.data.length === 0) {
       error.value = "Utilisateur non trouvé."
       return
     }
 
-    const user = userRes.data[0].toArray()
+    const user = userRes.data[0].split(',')
     // Vérification du mot de passe (sans chiffrement car déjà en clair dans la base)
     if (user[2] !== password.value) {
       error.value = "Mot de passe incorrect."
