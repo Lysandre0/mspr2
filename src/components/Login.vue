@@ -147,10 +147,8 @@ const handleLogin = async () => {
     }
 
     const user = userRes.data[0]
-    const hashedPassword = encryptPassword(password.value)
-
-    // Vérification du mot de passe
-    if (user[2] !== hashedPassword) {
+    // Vérification du mot de passe (sans chiffrement car déjà en clair dans la base)
+    if (user[2] !== password.value) {
       error.value = "Mot de passe incorrect."
       return
     }
