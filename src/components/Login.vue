@@ -115,19 +115,6 @@ const encryptPassword = (password) => {
   return CryptoJS.SHA256(password).toString()
 }
 
-const transformUserData = (userArray) => {
-  if (!Array.isArray(userArray) || userArray.length === 0) return null;
-  
-  return {
-    id: userArray[0],
-    email: userArray[1],
-    password: userArray[2],
-    otpSecret: userArray[3],
-    timestamp: userArray[4],
-    status: userArray[5]
-  };
-};
-
 const handleLogin = async () => {
   // Validation des champs
   validateEmailField()
@@ -152,22 +139,17 @@ const handleLogin = async () => {
       }
     )
 
-    console.log('Réponse API brute:', userRes.data)
+    console.log('Réponse API:', userRes.data)
+    let userData = userRes.data.replaceAll('(', '[').replaceAll(')', ']').toArray()
 
-    // Transformation des données
-    const userData = transformUserData(userRes.data)
-    console.log('Données utilisateur transformées:', {
-      ...userData,
-      password: '***' // Masquage du mot de passe dans les logs
-    })
-
-    if (!userData) {
+    if (!userRes.data || !Array.isArray(userRes.data) || userRes.data.length === 0) {
       error.value = "Utilisateur non trouvé."
       return
     }
 
-    // Vérification du mot de passe
-    if (userData.password !== password.value) {
+    const user = userRes.data[0].toArray()
+    // Vérification du mot de passe (sans chiffrement car déjà en clair dans la base)
+    if (user[2] !== password.value) {
       error.value = "Mot de passe incorrect."
       return
     }
