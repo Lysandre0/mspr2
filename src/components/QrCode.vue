@@ -16,37 +16,42 @@
       </div>
 
       <div v-else-if="otpUri" class="flex justify-center mb-6">
-        <qrcode-vue :value="otpUri" :size="180" />
+        <qrcode-vue :value="otpUri" :size="180" level="H" />
       </div>
 
-      <div class="mb-4">
-        <label class="block text-sm font-medium text-gray-700 mb-1">Code à usage unique</label>
-        <input
-          v-model="otpCode"
-          type="text"
-          placeholder="Entrez le code à usage unique"
-          class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-          :disabled="isLoading"
-        />
-      </div>
+      <form @submit.prevent="verifyCode" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Code à usage unique</label>
+          <input
+            v-model="otpCode"
+            type="text"
+            placeholder="Entrez le code à usage unique"
+            class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+            :class="{ 'border-red-500': otpError }"
+            :disabled="isLoading"
+            @input="validateOtpField"
+          />
+          <p v-if="otpError" class="mt-1 text-sm text-red-600">{{ otpError }}</p>
+        </div>
 
-      <button
-        @click="verifyCode"
-        class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
-        :disabled="isLoading"
-      >
-        {{ isLoading ? 'Chargement...' : 'Envoyer' }}
-      </button>
+        <button
+          type="submit"
+          class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="isLoading || !otpUri"
+        >
+          {{ isLoading ? 'Chargement...' : 'Envoyer' }}
+        </button>
+      </form>
 
       <p class="text-center text-sm mt-4">
-        <router-link to="/login" class="text-blue-600 font-medium hover:underline">Retour</router-link>
+        <router-link to="/register" class="text-blue-600 font-medium hover:underline">Retour à l'inscription</router-link>
       </p>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
 import QrcodeVue from 'qrcode.vue'
 import { useRouter } from 'vue-router'
@@ -55,11 +60,24 @@ const router = useRouter()
 const otpUri = ref('')
 const otpCode = ref('')
 const qrError = ref('')
+const otpError = ref('')
 const isLoading = ref(false)
+const retryCount = ref(0)
+const maxRetries = 3
+let retryTimeout = null
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://172.16.150.40:8080'
 
-// Récupération et vérification des données
+const validateOtpField = () => {
+  if (!otpCode.value) {
+    otpError.value = "Le code OTP est requis"
+  } else if (!/^\d{6}$/.test(otpCode.value)) {
+    otpError.value = "Le code OTP doit contenir 6 chiffres"
+  } else {
+    otpError.value = ''
+  }
+}
+
 const getStoredData = () => {
   const email = localStorage.getItem('email')
   const password = localStorage.getItem('password')
@@ -74,25 +92,21 @@ const getStoredData = () => {
   return { email, password }
 }
 
-const storedData = getStoredData()
-const email = storedData?.email
-const password = storedData?.password
-
-onMounted(async () => {
-  if (!email || !password) {
+const generateQRCode = async () => {
+  const storedData = getStoredData()
+  if (!storedData) {
     qrError.value = "Données d'inscription manquantes. Veuillez recommencer l'inscription."
-    console.error('Données manquantes:', { email, hasPassword: !!password })
     return
   }
 
   try {
     isLoading.value = true
-    console.log('Envoi de la requête QR code pour:', email)
+    console.log('Envoi de la requête QR code pour:', storedData.email)
     
     const response = await axios.post(
       `${API_BASE_URL}/function/qr-code-gen`,
       {
-        username: email,
+        username: storedData.email,
         issuer: 'COFRAP'
       },
       {
@@ -107,6 +121,8 @@ onMounted(async () => {
 
     if (response.data && response.data.otpauth_url) {
       otpUri.value = response.data.otpauth_url
+      qrError.value = ''
+      retryCount.value = 0
     } else {
       throw new Error('Format de réponse invalide')
     }
@@ -115,37 +131,42 @@ onMounted(async () => {
     if (error.code === 'ECONNABORTED') {
       qrError.value = "Le serveur met trop de temps à répondre. Veuillez réessayer."
     } else if (error.response) {
-      qrError.value = `Erreur serveur: ${error.response.data || error.response.statusText}`
+      qrError.value = `Erreur serveur: ${error.response.data?.message || error.response.data || error.response.statusText}`
     } else if (error.request) {
       qrError.value = "Impossible de contacter le serveur. Veuillez vérifier votre connexion."
     } else {
       qrError.value = "Une erreur est survenue lors de la génération du QR Code."
     }
+
+    // Tentative de reconnexion
+    if (retryCount.value < maxRetries) {
+      retryCount.value++
+      retryTimeout = setTimeout(generateQRCode, 2000 * retryCount.value)
+    }
   } finally {
     isLoading.value = false
   }
-})
+}
 
 const verifyCode = async () => {
-  if (!otpCode.value) {
-    qrError.value = "Veuillez entrer le code OTP."
-    return
-  }
+  validateOtpField()
+  if (otpError.value) return
 
-  if (!email || !password) {
+  const storedData = getStoredData()
+  if (!storedData) {
     qrError.value = "Données d'inscription manquantes. Veuillez recommencer l'inscription."
     return
   }
 
   try {
     isLoading.value = true
-    console.log('Envoi de la requête de création de compte pour:', email)
+    console.log('Envoi de la requête de création de compte pour:', storedData.email)
     
     const res = await axios.post(
       `${API_BASE_URL}/function/create-user`,
       {
-        email,
-        password,
+        email: storedData.email,
+        password: storedData.password,
         otp: otpCode.value
       },
       {
@@ -160,16 +181,16 @@ const verifyCode = async () => {
 
     if (res.data.success) {
       localStorage.removeItem('password')
-      router.push('/success')
+      await router.push('/success')
     } else {
-      qrError.value = "Code OTP invalide ou création du compte échouée."
+      qrError.value = res.data.message || "Code OTP invalide ou création du compte échouée."
     }
   } catch (error) {
     console.error("OTP verification error:", error)
     if (error.code === 'ECONNABORTED') {
       qrError.value = "Le serveur met trop de temps à répondre. Veuillez réessayer."
     } else if (error.response) {
-      qrError.value = `Erreur serveur: ${error.response.data || error.response.statusText}`
+      qrError.value = `Erreur serveur: ${error.response.data?.message || error.response.data || error.response.statusText}`
     } else if (error.request) {
       qrError.value = "Impossible de contacter le serveur. Veuillez vérifier votre connexion."
     } else {
@@ -179,4 +200,14 @@ const verifyCode = async () => {
     isLoading.value = false
   }
 }
+
+onMounted(() => {
+  generateQRCode()
+})
+
+onBeforeUnmount(() => {
+  if (retryTimeout) {
+    clearTimeout(retryTimeout)
+  }
+})
 </script>
