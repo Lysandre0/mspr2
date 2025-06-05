@@ -162,35 +162,71 @@ const verifyCode = async () => {
     isLoading.value = true
     console.log('Envoi de la requête de création de compte pour:', storedData.email)
     
+    // Préparation des données
+    const requestData = {
+      username: storedData.email.trim(),
+      password: storedData.password,
+      otp: otpCode.value.trim()
+    }
+
+    console.log('Données envoyées:', { ...requestData, password: '***' })
+    
     const res = await axios.post(
       `${API_BASE_URL}/function/create-user`,
-      {
-        email: storedData.email,
-        password: storedData.password,
-        otp: otpCode.value
-      },
+      requestData,
       {
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
-        timeout: 10000
+        timeout: 10000,
+        validateStatus: function (status) {
+          return status >= 200 && status < 500
+        }
       }
     )
 
     console.log('Réponse création de compte:', res.data)
 
-    if (res.data.success) {
+    if (res.status === 200 && res.data.success) {
       localStorage.removeItem('password')
       await router.push('/success')
     } else {
-      qrError.value = res.data.message || "Code OTP invalide ou création du compte échouée."
+      // Gestion des erreurs spécifiques
+      if (res.status === 400) {
+        if (res.data.message) {
+          qrError.value = res.data.message
+        } else if (res.data.error) {
+          qrError.value = res.data.error
+        } else {
+          qrError.value = "Format de données invalide. Veuillez vérifier vos informations."
+        }
+      } else if (res.status === 401) {
+        qrError.value = "Code OTP invalide ou expiré."
+      } else if (res.status === 409) {
+        qrError.value = "Un compte existe déjà avec cet email."
+      } else {
+        qrError.value = res.data.message || "Erreur lors de la création du compte."
+      }
     }
   } catch (error) {
     console.error("OTP verification error:", error)
     if (error.code === 'ECONNABORTED') {
       qrError.value = "Le serveur met trop de temps à répondre. Veuillez réessayer."
     } else if (error.response) {
-      qrError.value = `Erreur serveur: ${error.response.data?.message || error.response.data || error.response.statusText}`
+      // Gestion des erreurs de réponse
+      const status = error.response.status
+      const data = error.response.data
+
+      if (status === 400) {
+        qrError.value = data.message || data.error || "Format de données invalide. Veuillez vérifier vos informations."
+      } else if (status === 401) {
+        qrError.value = "Code OTP invalide ou expiré."
+      } else if (status === 409) {
+        qrError.value = "Un compte existe déjà avec cet email."
+      } else {
+        qrError.value = data.message || data.error || `Erreur serveur (${status}): ${error.response.statusText}`
+      }
     } else if (error.request) {
       qrError.value = "Impossible de contacter le serveur. Veuillez vérifier votre connexion."
     } else {
